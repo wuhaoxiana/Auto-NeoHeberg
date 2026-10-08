@@ -242,12 +242,15 @@ def rotate_secret(new_cookie):
         req = urllib.request.Request(
             f"https://api.github.com/repos/{repo}{path}", data=body,
             headers=h, method=method)
-        return json.loads(urllib.request.urlopen(req, timeout=45).read().decode())
+        raw = urllib.request.urlopen(req, timeout=45).read().decode()
+        # PUT/DELETE 成功返回 204 空体
+        return json.loads(raw) if raw.strip() else {}
 
     try:
         pk = api("/actions/secrets/public-key")
         pk_obj = public.PublicKey(pk["key"].encode(), encoding.Base64Encoder())
-        sealed = public.SecretBox(public.Secret(new_cookie.encode()), pk_obj)
+        # GitHub 用 libsodium sealed box（crypto_box_seal）加密 secret
+        sealed = public.SealedBox(pk_obj)
         enc = base64.b64encode(sealed.encrypt(new_cookie.encode())).decode()
         api("/actions/secrets/NEO_COOKIE", method="PUT",
             data={"encrypted_value": enc, "key_id": pk["key_id"]})
