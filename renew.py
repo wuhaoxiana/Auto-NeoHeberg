@@ -27,11 +27,14 @@ import urllib.parse
 import urllib.error
 
 BASE = "https://dash.neoheberg.fr"
-VMID = "1355"
-TYPE = "vps"
-LABEL = "sbsb"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
+# 实例标识走环境变量（公开仓库不硬编码任何账号/服务信息）
+USERNAME = os.environ.get("NEO_USER", "")
+VMID = os.environ.get("NEO_VMID", "")
+TYPE = os.environ.get("NEO_TYPE", "vps")
+LABEL = os.environ.get("NEO_LABEL", "vps")
 
 RENEW_DAYS = int(os.environ.get("RENEW_DAYS", "10"))
 TRIGGER = os.environ.get("GITHUB_EVENT_NAME", "local")
@@ -42,6 +45,16 @@ if os.environ.get("GITHUB_RUN_ID"):
                f"{os.environ['GITHUB_RUN_ID']}")
 
 LOG = []
+
+
+def mask(s, show=2):
+    """日志脱敏：只留首尾各 show 位"""
+    s = str(s)
+    if not s:
+        return "(空)"
+    if len(s) <= show * 2:
+        return "*" * len(s)
+    return s[:show] + "*" * (len(s) - show * 2) + s[-show:]
 
 
 def log(msg):
@@ -166,7 +179,7 @@ def refresh_cookie():
         page = ctx.new_page()
         try:
             page.goto(BASE + "/login", timeout=60000, wait_until="domcontentloaded")
-            page.fill('input[name="identifier"]', "yousb")
+            page.fill('input[name="identifier"]', USERNAME)
             page.click("#goToPassword")
             page.wait_for_timeout(1500)
             page.evaluate("() => { const w=document.getElementById('cap-login'); if (w) w.solve(); }")
@@ -267,11 +280,19 @@ def notify(text):
 
 def main():
     actions = []
+    missing = [k for k, v in (("NEO_USER", USERNAME), ("NEO_VMID", VMID)) if not v]
+    if missing:
+        log(f"缺少必要环境变量: {', '.join(missing)}")
+        notify(f"❌ NeoHeberg: 缺少配置 {', '.join(missing)}")
+        return 1
+
     cookie = (os.environ.get("NEO_COOKIE") or "").strip()
     if not cookie:
         notify("❌ NeoHeberg: 未配置 NEO_COOKIE")
         log("未配置 NEO_COOKIE")
         return 1
+    log(f"配置: 账号={mask(USERNAME)} 实例={mask(VMID)} 续期阈值={RENEW_DAYS}天 "
+        f"cookie={len(cookie)}字节")
 
     # 1. 会话有效性
     ok, why = session_ok(cookie)
@@ -358,7 +379,7 @@ def main():
     body = "\n".join(f"• {a}" for a in actions)
     icon = "✅" if not any(
         ("失败" in a or "异常" in a) for a in actions) else "⚠️"
-    text = (f"{icon} NeoHeberg 每日任务 ({LABEL})\n{body}\n"
+    text = (f"{icon} NeoHeberg 每日任务\n{body}\n"
             f"到期: {exp2} (剩 {days2} 天)\n"
             f"容器: {status}")
     if RUN_URL:

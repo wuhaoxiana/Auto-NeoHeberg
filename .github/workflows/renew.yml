@@ -27,10 +27,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install playwright pynacl
           playwright install --with-deps chromium
-          sudo apt-get install -y google-chrome-stable || true
 
       - name: Run renew + watchdog
         env:
+          NEO_USER: ${{ secrets.NEO_USER }}
+          NEO_VMID: ${{ secrets.NEO_VMID }}
           NEO_COOKIE: ${{ secrets.NEO_COOKIE }}
           NEO_PASSWORD: ${{ secrets.NEO_PASSWORD }}
           GH_PAT: ${{ secrets.GH_PAT }}
