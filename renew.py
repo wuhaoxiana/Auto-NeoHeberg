@@ -220,43 +220,9 @@ def refresh_cookie():
 
 
 def rotate_secret(new_cookie):
-    """用 GH_PAT 更新仓库 secret NEO_COOKIE"""
-    pat = os.environ.get("GH_PAT")
-    repo = os.environ.get("GITHUB_REPOSITORY")
-    if not pat or not repo:
-        return False, "缺少 GH_PAT / GITHUB_REPOSITORY"
-
-    try:
-        from nacl import encoding, public
-        import base64
-    except ImportError:
-        return False, "未安装 pynacl"
-
-    def api(path, method="GET", data=None):
-        h = {"Authorization": f"token {pat}",
-             "Accept": "application/vnd.github+json",
-             "User-Agent": "neoheberg-renew"}
-        body = json.dumps(data).encode() if data is not None else None
-        if body:
-            h["Content-Type"] = "application/json"
-        req = urllib.request.Request(
-            f"https://api.github.com/repos/{repo}{path}", data=body,
-            headers=h, method=method)
-        raw = urllib.request.urlopen(req, timeout=45).read().decode()
-        # PUT/DELETE 成功返回 204 空体
-        return json.loads(raw) if raw.strip() else {}
-
-    try:
-        pk = api("/actions/secrets/public-key")
-        pk_obj = public.PublicKey(pk["key"].encode(), encoding.Base64Encoder())
-        # GitHub 用 libsodium sealed box（crypto_box_seal）加密 secret
-        sealed = public.SealedBox(pk_obj)
-        enc = base64.b64encode(sealed.encrypt(new_cookie.encode())).decode()
-        api("/actions/secrets/NEO_COOKIE", method="PUT",
-            data={"encrypted_value": enc, "key_id": pk["key_id"]})
-        return True, "已更新 NEO_COOKIE"
-    except Exception as e:
-        return False, f"{type(e).__name__}: {str(e)[:150]}"
+    """【已停用】原用 GH_PAT 写回 NEO_COOKIE secret。
+    现改为每次运行都重新无头登录，不再持久化 cookie，本函数保留仅为兼容旧调用。"""
+    return False, "已停用（改为每次运行重新登录）"
 
 
 # ───────────────────────── Telegram ─────────────────────────
@@ -337,35 +303,37 @@ def main():
         return selftest()
 
     actions = []
-    missing = [k for k, v in (("NEO_USER", USERNAME), ("NEO_VMID", VMID)) if not v]
+    missing = [k for k, v in (("NEO_USER", USERNAME), ("NEO_VMID", VMID),
+                              ("NEO_PASSWORD", os.environ.get("NEO_PASSWORD"))) if not v]
     if missing:
-        log(f"缺少必要环境变量: {', '.join(missing)}")
+        log(f"缺少必要配置: {', '.join(missing)}")
         notify(f"❌ NeoHeberg: 缺少配置 {', '.join(missing)}")
         return 1
 
-    cookie = (os.environ.get("NEO_COOKIE") or "").strip()
-    if not cookie:
-        notify("❌ NeoHeberg: 未配置 NEO_COOKIE")
-        log("未配置 NEO_COOKIE")
-        return 1
-    log(f"配置: 账号={mask(USERNAME)} 实例={mask(VMID)} 续期阈值={RENEW_DAYS}天 "
-        f"cookie={len(cookie)}字节")
+    log(f"配置: 账号={mask(USERNAME)} 实例={mask(VMID)} 续期阈值={RENEW_DAYS}天")
 
-    # 1. 会话有效性
-    ok, why = session_ok(cookie)
-    log(f"会话检查: {'有效' if ok else '失效'} — {why}")
-    if not ok:
-        log("尝试无头浏览器重新登录…")
-        new_ck, msg = refresh_cookie()
-        if not new_ck:
-            notify(f"❌ NeoHeberg 续期失败：cookie 失效且自动刷新失败\n原因: {msg}")
+    # 1. 登录（每次运行都用无头浏览器登录，不依赖持久化 cookie）
+    cookie = ""
+    used_cookie_secret = False
+    ck_secret = (os.environ.get("NEO_COOKIE") or "").strip()
+    if ck_secret:
+        ok, why = session_ok(ck_secret)
+        log(f"预置 cookie 检查: {'有效' if ok else '失效'} — {why}")
+        if ok:
+            cookie = ck_secret
+            used_cookie_secret = True
+
+    if not cookie:
+        log("无头浏览器登录…")
+        cookie, msg = refresh_cookie()
+        if not cookie:
+            notify(f"❌ NeoHeberg 任务失败：登录失败\n原因: {msg}")
+            log(f"登录失败: {msg}")
             return 1
-        cookie = new_ck
-        log("重新登录成功，已获取新 cookie")
-        actions.append("cookie 自动刷新")
-        rok, rmsg = rotate_secret(cookie)
-        log(f"secret 轮换: {rmsg}")
-        actions.append(f"secret 轮换({rmsg})")
+        log("登录成功")
+        actions.append("无头登录成功")
+    else:
+        log("使用预置 cookie（本次未走浏览器）")
 
     # 2. 到期检查
     try:

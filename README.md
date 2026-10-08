@@ -6,20 +6,22 @@
 
 每天 UTC 02:00（北京时间 10:00）运行一次：
 
-1. **会话检查** — 用 cookie 访问面板
-2. **cookie 自动刷新** — 失效则用无头 Chrome 自动登录（含 Cap.js PoW 验证码）并轮换 secret
-3. **续期** — 剩余天数 ≤ `RENEW_DAYS`（默认 14）时续期，+31 天且不损失已有天数
-4. **开机守护** — 容器已停止则下发开机指令
-5. **Telegram 通知** — 汇报本次动作、到期日、容器状态
+1. **登录** — 无头 Chrome 打开登录页，自动解 Cap.js 验证码并提交账号密码
+2. **续期** — 剩余天数 ≤ `RENEW_DAYS`（默认 14）时续期，+31 天且不损失已有天数
+3. **开机守护** — 容器已停止则下发开机指令，45 秒后复验状态
+4. **Telegram 通知** — 汇报本次动作、到期日、容器状态
 
-## 为什么需要无头浏览器
+## 为什么用无头浏览器登录
 
 面板登录带 **Cap.js 工作量证明验证码**。`POST /redeem` 会校验 `instr` 指纹字段——
 服务端下发一段 base64 + deflate 的约 9KB 检测脚本，在沙箱 iframe 里采集
 `navigator.webdriver` / 字体宽度 / `WebGL` 原生性 / `screen` 等信号，并检测
-Node / headless 环境泄漏。纯 HTTP 客户端无法作答（403 `missing_instrumentation_response`）。
+Node 环境泄漏。纯 HTTP 客户端无法作答（403 `missing_instrumentation_response`）。
 
-解决办法：**只让浏览器做"解验证码"这一步**，拿到 `cap-token` 后所有面板操作仍走纯 HTTP。
+无头 Chromium 能通过检测（检测针对的是 Node 运行时，不是无头浏览器引擎），
+实测约 11 秒解出 `cap-token`。只有登录这一步需要浏览器，其余面板操作走纯 HTTP。
+
+**不保存任何 cookie**：每次运行都重新登录，因此不依赖任何会过期的持久化凭证。
 
 ## 配置
 
@@ -28,32 +30,26 @@ Node / headless 环境泄漏。纯 HTTP 客户端无法作答（403 `missing_ins
 | Secret | 说明 |
 |---|---|
 | `NEO_USER` | 面板登录账号 |
+| `NEO_PASSWORD` | 面板登录密码 |
 | `NEO_VMID` | 容器实例 ID（面板服务列表里可见） |
-| `NEO_COOKIE` | 面板 Cookie 头（`__Host-NH=...; __Host-NH-Remember=...`），有效期 30 天，失效后自动轮换 |
-| `NEO_PASSWORD` | 面板密码，仅用于 cookie 失效时重新登录 |
-| `GH_PAT` | 有 `repo` scope 的 PAT，用于自动更新 `NEO_COOKIE`（可选，不配则只在日志提示） |
 | `TG_BOT_TOKEN` | Telegram bot token（可选，不配则跳过通知） |
 | `TG_CHAT_ID` | Telegram chat id（可选） |
-
-`NEO_COOKIE` 首次获取：浏览器登录面板 → DevTools → Application → Cookies →
-把 `__Host-NH` 与 `__Host-NH-Remember` 拼成 `name=value; name=value` 形式。
 
 ### 本地测试
 
 ```bash
-export NEO_USER=...  NEO_VMID=...
-export NEO_COOKIE="__Host-NH=...; __Host-NH-Remember=..."
-export NEO_PASSWORD=...
+export NEO_USER=...  NEO_PASSWORD=...  NEO_VMID=...
 export RENEW_DAYS=10
 python3 renew.py
 ```
 
-验证 cookie 自动刷新（应触发无头登录）：
+只测验证码求解（不登录、不改任何状态）：
 
 ```bash
-export NEO_COOKIE="__Host-NH=invalid; __Host-NH-Remember=invalid"
-python3 renew.py
+python3 renew.py --selftest
 ```
+
+工作流也支持手动触发 `selftest` 模式。
 
 ## 接口备忘
 
@@ -66,6 +62,7 @@ POST /services/renew                     csrf_token=...&type=vps&id=<id>   → +
 
 登录为两步式 PHP 表单：先填 `identifier` 并点 `#goToPassword`，密码字段才会显示；
 提交时带 `csrf_token` / `identifier` / `password` / `remember_me` / `cap-token`。
+成功后会拿到 `__Host-NH` / `__Host-NH-Remember` cookie（后者 30 天）。
 
 ## 注意
 
@@ -75,3 +72,4 @@ POST /services/renew                     csrf_token=...&type=vps&id=<id>   → +
 - 容器若装了自己的隧道守护（systemd timer），首次开机后隧道服务可能因网络未就绪
   而退出，需等其自愈。
 - 续期为免费（面板显示 `offre gratuite`），余额 0 不影响。
+- 日志会遮盖账号与实例 ID（`mask()`），因为本仓库公开、Actions 日志对外可见。

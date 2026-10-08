@@ -34,16 +34,14 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install playwright pynacl
+          pip install playwright
           playwright install --with-deps chromium
 
       - name: Run renew + watchdog
         env:
           NEO_USER: ${{ secrets.NEO_USER }}
-          NEO_VMID: ${{ secrets.NEO_VMID }}
-          NEO_COOKIE: ${{ secrets.NEO_COOKIE }}
           NEO_PASSWORD: ${{ secrets.NEO_PASSWORD }}
-          GH_PAT: ${{ secrets.GH_PAT }}
+          NEO_VMID: ${{ secrets.NEO_VMID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           RENEW_DAYS: '14'
