@@ -278,7 +278,61 @@ def notify(text):
 
 # ───────────────────────── 主流程 ─────────────────────────
 
+def selftest():
+    """自检：验证无头浏览器能启动并解出 cap-token（不做登录，不动 cookie）"""
+    log("── 自检模式：测试无头浏览器 + Cap.js 求解 ──")
+    from playwright.sync_api import sync_playwright
+    t0 = time.time()
+    try:
+        with sync_playwright() as p:
+            browser = None
+            for kwargs in ({"channel": "chrome"}, {}):
+                try:
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=["--disable-blink-features=AutomationControlled",
+                              "--no-sandbox", "--disable-dev-shm-usage"], **kwargs)
+                    log(f"浏览器启动: {kwargs.get('channel') or 'bundled chromium'} "
+                        f"({time.time()-t0:.1f}s)")
+                    break
+                except Exception as e:
+                    log(f"  {kwargs.get('channel') or 'chromium'} 启动失败: {type(e).__name__}")
+                    browser = None
+            if browser is None:
+                raise RuntimeError("无可用浏览器")
+
+            ctx = browser.new_context(user_agent=UA, viewport={"width": 1920, "height": 1080},
+                                      locale="fr-FR")
+            page = ctx.new_page()
+            page.goto(BASE + "/login", timeout=60000, wait_until="domcontentloaded")
+            page.fill('input[name="identifier"]', USERNAME)
+            page.click("#goToPassword")
+            page.wait_for_timeout(1500)
+            page.evaluate("() => { const w=document.getElementById('cap-login'); if (w) w.solve(); }")
+            token = ""
+            for _ in range(30):
+                page.wait_for_timeout(2000)
+                token = page.evaluate(
+                    "() => { const e=document.querySelector('input[name=\"cap-token\"]');"
+                    " return e ? e.value : ''; }")
+                if token and len(token) > 20:
+                    break
+            browser.close()
+
+        if token and len(token) > 20:
+            log(f"✅ 自检通过: cap-token 长度 {len(token)}（耗时 {time.time()-t0:.1f}s）")
+            return 0
+        log("❌ 自检失败: 未取到 cap-token")
+        return 1
+    except Exception as e:
+        log(f"❌ 自检异常: {type(e).__name__}: {str(e)[:250]}")
+        return 1
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
+
     actions = []
     missing = [k for k, v in (("NEO_USER", USERNAME), ("NEO_VMID", VMID)) if not v]
     if missing:

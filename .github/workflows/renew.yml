@@ -5,6 +5,15 @@ on:
     # 每天 UTC 02:00（北京时间 10:00）
     - cron: '0 2 * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '运行模式'
+        required: false
+        default: renew
+        type: choice
+        options:
+          - renew
+          - selftest
 
 concurrency:
   group: neoheberg-renew
@@ -38,4 +47,9 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           RENEW_DAYS: '14'
-        run: python renew.py
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "selftest" ]; then
+            python renew.py --selftest
+          else
+            python renew.py
+          fi
