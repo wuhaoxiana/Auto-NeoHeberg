@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       actions: write   # 删除历史运行记录需要
-      contents: write
+      contents: write  # 提交 time.txt 需要
 
     steps:
       - uses: actions/checkout@v4
@@ -65,8 +65,8 @@ jobs:
             python renew.py
           fi
 
-      # 更新时间到time.txt,避免6个月未更新导致工作流暂停
-      - name: 🕒 更新时间
+      - name: 🕒 更新时间（避免 60 天无提交导致定时工作流被暂停）
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -76,10 +76,11 @@ jobs:
             echo "No need to commit"
           else
             git commit -m "⏱️ Auto Update by Github Actions $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M:%S')"
-            git push origin main
+            git push
           fi
 
       - name: 🧹 清理旧的工作流运行记录
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
