@@ -1,15 +1,18 @@
-# NeoHeberg 自动续期 + 开机守护
+# NeoHeberg 多账号自动续期 + 开机守护
 
-面板 `dash.neoheberg.fr` 的 LXC 容器每日自动续期与保活（GitHub Actions）。
+面板 `dash.neoheberg.fr` 的 LXC 容器**多账号**每日自动续期与保活（GitHub Actions）。
 
 ## 功能
 
-每天 UTC 02:00（北京时间 10:00）运行一次：
+每天 UTC 02:00（北京时间 10:00）运行一次，对配置里的每个账号依次执行：
 
 1. **登录** — 无头 Chrome 打开登录页，自动解 Cap.js 验证码并提交账号密码
 2. **续期** — 剩余天数 ≤ `RENEW_DAYS`（默认 14）时续期，+31 天且不损失已有天数
 3. **开机守护** — 容器已停止则下发开机指令，45 秒后复验状态
-4. **Telegram 通知** — 汇报本次动作、到期日、容器状态
+4. **Telegram 通知** — **每个账号单独一条**通知，汇报动作、到期日、容器状态
+
+同一账号的多个实例只登录一次（同一浏览器 context 内复用会话），
+不同账号之间 cookie 完全隔离，不会串会话。
 
 ## 为什么用无头浏览器登录
 
@@ -27,19 +30,40 @@ Node 环境泄漏。纯 HTTP 客户端无法作答（403 `missing_instrumentatio
 
 ### Secrets
 
+多账号配置**按行一一对应**：第 1 行账号 → 第 1 行密码 → 第 1 行实例 ID。
+
 | Secret | 说明 |
 |---|---|
-| `NEO_USER` | 面板登录账号 |
-| `NEO_PASSWORD` | 面板登录密码 |
-| `NEO_VMID` | 容器实例 ID（面板服务列表里可见） |
+| `NEO_USER` | 面板登录账号，每行一个 |
+| `NEO_PASSWORD` | 面板登录密码，每行一个 |
+| `NEO_VMID` | 容器实例 ID，每行一个 |
+| `NEO_TYPE` | 实例类型，每行一个（可选，默认 `vps`） |
+| `NEO_LABEL` | 显示名，每行一个（可选，默认用 VMID） |
 | `TG_BOT_TOKEN` | Telegram bot token（可选，不配则跳过通知） |
 | `TG_CHAT_ID` | Telegram chat id（可选） |
+
+行数必须匹配：`NEO_USER` / `NEO_PASSWORD` / `NEO_VMID` 三者行数不一致会直接报错退出，
+避免跑错账号。`NEO_TYPE` / `NEO_LABEL` 行数不足时按 `vps` / VMID 补齐。
+
+也支持用逗号 / 分号分隔写在一行（`a@x.com,b@y.com`），脚本会自动拆行。
+
+### 手动触发
+
+Actions 页面手动运行时可填 `accounts` 输入框选择账号序号：
+
+- 留空 = 全部账号
+- `1,3` = 第 1 和第 3 个账号
+- `2-4` = 第 2 到第 4 个账号
+
+序号非法或超出范围会直接报错退出，不会误跑全部账号。
 
 ### 本地测试
 
 ```bash
-export NEO_USER=...  NEO_PASSWORD=...  NEO_VMID=...
-export RENEW_DAYS=10
+export NEO_USER="a@x.com"          # 多账号用换行分隔
+export NEO_PASSWORD="pass1"
+export NEO_VMID="12345"
+export RENEW_DAYS=14
 python3 renew.py
 ```
 
@@ -72,4 +96,6 @@ POST /services/renew                     csrf_token=...&type=vps&id=<id>   → +
 - 容器若装了自己的隧道守护（systemd timer），首次开机后隧道服务可能因网络未就绪
   而退出，需等其自愈。
 - 续期为免费（面板显示 `offre gratuite`），余额 0 不影响。
-- 日志会遮盖账号与实例 ID（`mask()`），因为本仓库公开、Actions 日志对外可见。
+- 每个账号登录 + 续期约 1 分钟，账号多时注意 workflow 的 `timeout-minutes`（当前 45）。
+- 日志会遮盖账号与实例 ID（`mask_user()` / `mask()`），因为本仓库公开、Actions 日志对外可见。
+- 全部账号都失败时脚本以非零码退出，Actions 会标红；只要有一个成功就算通过。
