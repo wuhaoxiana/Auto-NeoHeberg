@@ -14,6 +14,11 @@ on:
         options:
           - renew
           - selftest
+      accounts:
+        description: '要续期的账号序号（每行一个账号的顺序），如 1,3 或 2-4，留空=全部'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: neoheberg-renew
@@ -22,7 +27,7 @@ concurrency:
 jobs:
   renew:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +44,14 @@ jobs:
 
       - name: Run renew + watchdog
         env:
+          # 以下三项均按行一一对应，一行 = 一个账号/实例
           NEO_USER: ${{ secrets.NEO_USER }}
           NEO_PASSWORD: ${{ secrets.NEO_PASSWORD }}
           NEO_VMID: ${{ secrets.NEO_VMID }}
+          # 可选：按行对应的实例类型 / 显示名，不配则默认 vps / VMID
+          NEO_TYPE: ${{ secrets.NEO_TYPE }}
+          NEO_LABEL: ${{ secrets.NEO_LABEL }}
+          SELECTED_ACCOUNTS: ${{ github.event.inputs.accounts }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           RENEW_DAYS: '14'
