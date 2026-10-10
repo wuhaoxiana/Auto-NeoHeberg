@@ -1,0 +1,22 @@
+[
+  {
+    "name": "主号",
+    "user": "you@example.com",
+    "password": "your-password",
+    "vmid": "123456"
+  },
+  {
+    "name": "备用号",
+    "user": "backup@example.com",
+    "password": "another-password",
+    "vmid": "778899",
+    "renew_days": 7
+  },
+  {
+    "name": "暂时停用的号",
+    "user": "paused@example.com",
+    "password": "some-password",
+    "vmid": "111111",
+    "enabled": false
+  }
+]
