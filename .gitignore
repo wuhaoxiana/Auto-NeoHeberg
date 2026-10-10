@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .env
 .venv/
+
+# 本地账号配置（含明文密码，绝不可提交）
+accounts.json
+accounts*.json
+!accounts.example.json
